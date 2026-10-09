@@ -1,168 +1,178 @@
-# 📈 Recurrent Neural Network (RNN / LSTM) Stock Price Forecasting
+<div align="center">
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Framework-PyTorch](https://img.shields.io/badge/framework-PyTorch%20%2F%20Vectorized%20NumPy-red.svg)](https://pytorch.org/)
-[![License-MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Dashboard](https://img.shields.io/badge/dashboard-Live%20Localhost%3A8000-orange.svg)](http://localhost:8000)
+# 📈 Stock Price Forecasting using Recurrent Neural Networks (RNN / LSTM)
 
-An end-to-end, production-grade deep learning solution for forecasting next-day stock closing prices using Recurrent Neural Networks (LSTM / SimpleRNN) and 60-day sliding temporal windows, modeled on the Kaggle **"Stock Market Data"** dataset structure (NASDAQ, NYSE, S&P 500 by Paul Mooney).
+### *An End-to-End Deep Learning Time-Series Forecasting Pipeline with Strict Temporal Validation & Zero Lookahead Bias*
 
----
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge)](https://github.com/psf/black)
+[![Status](https://img.shields.io/badge/Status-Production--Ready-success?style=for-the-badge)]()
 
-## 📌 Table of Contents
-- [Executive Overview](#-executive-overview)
-- [Why We Use Historical Data (Variant A & Backtesting)](#-why-we-use-historical-data-variant-a--backtesting)
-- [Data Leakage Prevention](#-data-leakage-prevention)
-- [Model Architecture & Pipeline](#-model-architecture--pipeline)
-- [Evaluation & Benchmark Results](#-evaluation--benchmark-results)
-- [Interactive Web Dashboard](#-interactive-web-dashboard)
-- [Project Structure](#-project-structure)
-- [Quick Start Guide](#-quick-start-guide)
-- [Deploying to Live 2026 Market Feeds](#-deploying-to-live-2026-market-feeds)
-- [License](#-license)
+<br/>
+
+[Overview](#-overview) • [Key Highlights](#-key-highlights) • [Architecture](#-model-architecture--dataflow) • [Benchmark Results](#-benchmark-results) • [Web Dashboard](#-interactive-web-dashboard) • [Quick Start](#-quick-start-guide) • [Live Inference](#-live-market-inference) • [Author](#-author)
+
+</div>
 
 ---
 
-## 🎯 Executive Overview
+## 📖 Overview
 
-Predicting equity prices requires capturing sequential dependencies across historical trading sessions. This repository provides:
-- **Modular Pipeline**: Clean separation of data ingestion, sliding window generation, scaling, training, evaluation, and visualization.
-- **60-Day Sliding Windows**: Maps sequences of 60 consecutive trading days of OHLCV features ($X_t \in \mathbb{R}^{60 \times 5}$) to predict the 61st day's closing price ($y_{t+1} \in \mathbb{R}$).
-- **Regularization & Early Stopping**: Multi-layer recurrent networks with Dropout to mitigate overfitting, monitored via validation loss.
-- **Interactive UI**: Built-in interactive localhost web dashboard with dynamic Chart.js visualizations.
+Forecasting equity asset valuations is an inherently non-linear sequential challenge influenced by temporal dependencies, volatility clustering, and regime shifts. 
 
----
-
-## 🧠 Why We Use Historical Data (Variant A & Backtesting)
-
-A common question in quantitative machine learning is: *Why train on historical time slices rather than exclusively fetching live current market data?*
+This repository provides an enterprise-ready, modular deep learning solution designed to predict next-day equity closing prices using **Recurrent Neural Networks (LSTM & SimpleRNN)** over 60-day sliding temporal windows. The data architecture adheres to the standard Kaggle **"Stock Market Data"** schema (NASDAQ, NYSE, S&P 500 by Paul Mooney), enforcing rigorous temporal validation and zero lookahead bias throughout the pipeline.
 
 ```mermaid
-graph LR
-    subgraph "Historical Timeline (Variant A)"
-        A["60-Day Past Windows\n(OHLCV)"] --> B["Train Split (80%)\nFit Scaler + Train RNN"]
-        B --> C["Validation Split (20%)\nEarly Stopping Check"]
-    end
-    C --> D["Unseen Test Evaluation\nMeasure Real Dollar RMSE & MAE"]
-    D --> E["Forward Inference\n(Live 2026 Market Data)"]
+flowchart LR
+    A["Historical Market Feed\n(OHLCV Time Series)"] --> B["Chronological Partition\n(80% Train / 20% Test)"]
+    B --> C["Train-Fitted MinMaxScaler\n(Zero Lookahead Leakage)"]
+    C --> D["60-Day Sliding Windows\n(Batch, 60, 5)"]
+    D --> E["Stacked LSTM / RNN\n+ Dropout (p=0.2)"]
+    E --> F["Evaluation & Backtesting\nUnscaled Dollar Metrics"]
+    F --> G["Interactive Dashboard\n(Chart.js + Localhost:8000)"]
 ```
-
-### 1. Eliminating Lookahead Bias & Data Snooping
-In financial time series, models must never access information from future timestamps. Training on a fixed historical slice (**Variant A: First 50% chronological half**) enforces a strict chronological boundary, ensuring the model learns solely from historical patterns that would have been genuinely available at that historical moment.
-
-### 2. Rigorous Offline Backtesting & Ground-Truth Verification
-To determine whether a deep learning architecture has true predictive capability, we must evaluate its forecasts against actual realized outcomes. Using historical data provides known ground-truth targets, allowing us to compute precise evaluation metrics such as Root Mean Squared Error (RMSE) and Mean Absolute Error (MAE) on a dollar scale.
-
-### 3. Generalization Across Market Regimes
-Historical market cycles encompass bull runs, market corrections, and volatility clusters. By isolating historical subsets, we test whether the model can generalize across diverse regimes before deploying it into live execution.
 
 ---
 
-## 🛡️ Data Leakage Prevention
+## ✨ Key Highlights
 
-One of the most critical pitfalls in financial machine learning is **scaling data before splitting**. This project implements strict featurization ordering:
+- 🛡️ **Zero Data Leakage Architecture**: Normalization parameters (`MinMaxScaler`) are computed strictly from the training partition (`train_df`) and applied forward to test and validation splits—eliminating future distribution leakage.
+- ⏱️ **60-Day Multi-Variate Sliding Windows**: Sequences of 60 consecutive trading sessions spanning 5 features (Open, High, Low, Close, Volume: $X_t \in \mathbb{R}^{60 \times 5}$) map to the 61st day's closing price ($y_{t+1} \in \mathbb{R}$).
+- ⚙️ **Dual-Engine Computation**: Native **PyTorch** architecture with automatic, high-performance **Vectorized NumPy** fallback ensuring out-of-the-box execution across any environment.
+- 📊 **Real-Time Interactive Dashboard**: Embedded web application (`localhost:8000`) with dynamic Chart.js visualizations, loss curve tracking, and on-the-fly model retraining.
+- 🎯 **Dollar-Denominated Metrics**: Model outputs are inverse-transformed to real dollar values to calculate authentic **RMSE ($2.84)** and **MAE ($2.32)** for tangible trading interpretability.
+- 🛑 **Early Stopping & Regularization**: Multi-layer recurrent design coupled with spatial Dropout ($p = 0.20$) and validation patience triggers to prevent overfitting on market noise.
+
+---
+
+## 🛡️ Preventing Lookahead Bias & Data Snooping
+
+A core flaw in financial machine learning pipelines is data leakage introduced during normalization or random data shuffling. This project implements strict safeguards:
 
 ```
-[Full Dataset (Variant A)] 
+[Full OHLCV Dataset] 
         │
-        ├──► [Chronological Split (80% Train, 20% Test)] ── (No Shuffling)
+        ├──► [Strict Chronological Split: 80% Train, 20% Test]  (No Shuffling)
                     │
-                    ├──► [Fit MinMaxScaler on Train ONLY]
+                    ├──► [Fit MinMaxScaler on Train Split ONLY]
                     │           │
                     │           ├──► Transform Train Split
-                    │           └──► Transform Test Split (Using Train Parameters)
+                    │           └──► Transform Test Split (Using Train Min/Max Bounds)
 ```
 
-By calculating min/max statistics strictly on the training partition, the test set remains completely unseen, preserving the statistical integrity of all evaluation metrics.
+1. **Chronological Splitting (No Shuffling)**: Time order is strictly maintained. The model trains strictly on dates $T_0 \dots T_{train}$ and is tested only on future periods $T_{train+1} \dots T_{end}$.
+2. **Isolated Scaling Bounds**: Minimum and maximum price statistics are derived solely from the training set:
+   $$X_{scaled} = \frac{X - \min(X_{train})}{\max(X_{train}) - \min(X_{train})}$$
+3. **Rigorous Offline Backtesting**: Using historical slices (Variant A: first chronological half) provides verified ground-truth targets to validate real out-of-sample predictive accuracy before deployment.
 
 ---
 
-## 🏗️ Model Architecture & Pipeline
+## 🏗️ Model Architecture & Dataflow
 
-The model utilizes stacked Recurrent Neural Network layers (LSTM or SimpleRNN) followed by Dropout regularization and a Linear / Dense(1) head:
+The neural network consumes 60 days of multi-variate market signals and routes them through stacked recurrent layers, extracting long-term temporal dependencies:
+
+```
+Input Sequence: (Batch Size, 60 Trading Days, 5 OHLCV Features)
+       │
+       ▼
+┌────────────────────────────────────────────────────────┐
+│  Recurrent Layer 1: Stacked LSTM / SimpleRNN (Dim=64)  │
+└────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌────────────────────────────────────────────────────────┐
+│  Recurrent Layer 2: Stacked LSTM / SimpleRNN (Dim=64)  │
+└────────────────────────────────────────────────────────┘
+       │ (Hidden state vector at final time-step h_60)
+       ▼
+┌────────────────────────────────────────────────────────┐
+│  Dropout Regularization (p = 0.20)                     │
+└────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌────────────────────────────────────────────────────────┐
+│  Dense Output Head: Linear(64 -> 1)                    │
+└────────────────────────────────────────────────────────┘
+       │
+       ▼
+Output: Next-Day Closing Price Prediction (Scaled -> $ Unscaled)
+```
+
+### Mathematical Formulation
+
+Given hidden state $\mathbf{h}_{t-1}$ and input vector $\mathbf{x}_t \in \mathbb{R}^5$:
+
+$$\mathbf{h}_t = \tanh(\mathbf{W}_{ih} \mathbf{x}_t + \mathbf{b}_{ih} + \mathbf{W}_{hh} \mathbf{h}_{t-1} + \mathbf{b}_{hh})$$
+
+The final forecast is computed from the terminal hidden state $\mathbf{h}_{60}$:
 
 $$\hat{y}_{t+1} = \mathbf{W}_{hy} \cdot \text{Dropout}(\mathbf{h}_{60}) + b_y$$
 
-```
-Input Sequence: (Batch, 60 Days, 5 OHLCV Features)
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│ Recurrent Layer 1 (LSTM / RNN, Dim=64)  │
-└─────────────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│ Recurrent Layer 2 (LSTM / RNN, Dim=64)  │
-└─────────────────────────────────────────┘
-       │ (Take Hidden State at Step 60)
-       ▼
-┌─────────────────────────────────────────┐
-│ Dropout Layer (p = 0.20)                │
-└─────────────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────┐
-│ Dense Layer: Linear(64 -> 1)            │
-└─────────────────────────────────────────┘
-       │
-       ▼
-Output: Next-Day Closing Price Prediction ($)
-```
+Optimized via Adam with Mean Squared Error (MSE) objective:
+
+$$\mathcal{L}_{MSE} = \frac{1}{N} \sum_{i=1}^N (y_i - \hat{y}_i)^2$$
 
 ---
 
-## 📊 Evaluation & Benchmark Results
+## 📊 Benchmark Results
 
-Evaluation is performed by inverse-transforming predictions back to the original USD price scale:
+Evaluation is measured on unscaled, authentic dollar values over the out-of-sample test split:
 
-| Metric | Result | Description |
-| :--- | :--- | :--- |
-| **Root Mean Squared Error (RMSE)** | **\$2.84** | Standard deviation of prediction residuals |
-| **Mean Absolute Error (MAE)** | **\$2.32** | Mean absolute daily dollar deviation |
-| **Input Window** | **60 Days** | Past trading days consumed per forecast |
-| **Optimization** | **Adam ($lr = 0.001$)** | Mean Squared Error (MSE) Loss |
-| **Convergence** | **Early Stopping (Epoch 17)** | Automatically halted when validation loss plateaued |
+| Evaluation Metric | Benchmark Value | Unit | Definition |
+| :--- | :---: | :---: | :--- |
+| **Root Mean Squared Error (RMSE)** | **\$2.84** | USD ($) | Standard deviation of price prediction residuals |
+| **Mean Absolute Error (MAE)** | **\$2.32** | USD ($) | Average absolute dollar deviation per trading day |
+| **Temporal Lookback Window** | **60 Days** | Sessions | Historical market days ingested per prediction |
+| **Optimization Strategy** | **Adam ($lr = 10^{-3}$)** | - | Gradient descent with adaptive moment estimation |
+| **Early Stopping Trigger** | **Epoch 17** | Epochs | Halted when validation loss plateaued |
 
-### Actual vs. Predicted Next-Day Stock Price & Loss Convergence
+### Prediction Trajectory & Loss Convergence
+
 ![Stock Price Forecasting Results](stock_forecasting_results.png)
+
+*Figure: (Left) Actual vs. Predicted Next-Day Stock Closing Price on unseen test sessions. (Right) Training vs. Validation MSE loss convergence across training epochs.*
 
 ---
 
 ## 💻 Interactive Web Dashboard
 
-A built-in interactive dashboard is included for exploring predictions, monitoring loss convergence, and triggering on-the-fly retraining.
+The project includes a lightweight, zero-external-server web dashboard built with Python's native HTTP engine and styled with modern dark-mode CSS and Chart.js.
 
 ```bash
 python app.py
 ```
-Open **[http://localhost:8000](http://localhost:8000)** in your browser:
-- 📈 **Interactive Price Chart**: Zoomable and hover-inspectable actual vs. predicted prices.
-- 📉 **Real-Time Loss Curves**: Training and validation MSE curves over epochs.
-- 📋 **OHLCV Data Explorer**: View raw historical sample records.
-- 🔄 **Live Retraining**: One-click execution of the recurrent training loop.
+
+Navigate to **[http://localhost:8000](http://localhost:8000)** in your browser:
+
+- 📈 **Interactive Price Chart**: Inspect actual vs. predicted values with hover tooltips and temporal zoom.
+- 📉 **Real-Time Loss Convergence**: Monitor train vs. validation loss decay across epochs.
+- 📋 **OHLCV Data Explorer**: View raw historical sample records and volume distributions.
+- 🔄 **One-Click Retraining**: Trigger asynchronous model retraining and metric updates directly from the browser UI.
 
 ---
 
 ## 📂 Project Structure
 
 ```
-rnn_stock_forecasting/
-├── data/
-│   └── sample_stock_data.csv        # 1,000 trading days formatted to Paul Mooney Kaggle schema
-├── scripts/
-│   ├── generate_sample_data.py      # Generates synthetic OHLCV market data
-│   └── build_notebook.py            # Generates reproducible Jupyter Notebook
-├── src/
-│   ├── __init__.py
-│   └── rnn_stock_model.py           # Modular loading, windowing, scaling, model & training functions
-├── app.py                           # Interactive Web Application (http://localhost:8000)
-├── run_pipeline.py                  # End-to-end CLI pipeline runner
-├── stock_forecasting_rnn.ipynb      # End-to-end reproducible Jupyter Notebook
-├── stock_forecasting_results.png    # High-resolution benchmark plot
-├── requirements.txt                 # Python dependencies
-├── .gitignore                       # Standard ignore rules
-└── README.md                        # Documentation
+stock-price-forecasting-rnn/
+├── 📁 data/
+│   └── sample_stock_data.csv        # 1,000 trading sessions (Paul Mooney Kaggle format)
+├── 📁 scripts/
+│   ├── generate_sample_data.py      # Synthetic OHLCV market generator
+│   └── build_notebook.py            # Automated Jupyter notebook builder
+├── 📁 src/
+│   ├── __init__.py                  # Package initializer
+│   └── rnn_stock_model.py           # Core modeling, scaling, windowing, and training logic
+├── 📄 app.py                        # Interactive localhost web dashboard (Port 8000)
+├── 📄 run_pipeline.py               # Complete end-to-end CLI execution script
+├── 📓 stock_forecasting_rnn.ipynb   # Interactive analysis & experimental notebook
+├── 🖼️ stock_forecasting_results.png # High-resolution benchmark performance plot
+├── 📋 requirements.txt              # Production dependency specifications
+├── 🛡️ .gitignore                    # Version control exclusion rules
+├── ⚖️ LICENSE                       # MIT License
+└── 📖 README.md                     # Project documentation
 ```
 
 ---
@@ -170,61 +180,95 @@ rnn_stock_forecasting/
 ## 🚀 Quick Start Guide
 
 ### 1. Clone the Repository
+
 ```bash
 git clone https://github.com/Aditthan-07/stock-price-forecasting-rnn.git
 cd stock-price-forecasting-rnn
 ```
 
-### 2. Set Up Virtual Environment & Dependencies
+### 2. Set Up Virtual Environment
+
 ```bash
 # Create virtual environment
 python -m venv .venv
 
 # Activate on Windows:
 .venv\Scripts\activate
+
 # Activate on macOS/Linux:
 source .venv/bin/activate
 
-# Install requirements
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Run the CLI Pipeline
+### 3. Run the End-to-End Pipeline
+
+Execute the full training, evaluation, and chart generation workflow:
+
 ```bash
 python run_pipeline.py
 ```
 
-### 4. Launch the Web Dashboard
+### 4. Launch the Web Application
+
 ```bash
 python app.py
-# Open http://localhost:8000 in your browser
+```
+Open your browser at `http://localhost:8000`.
+
+### 5. Launch Jupyter Notebook (Optional)
+
+```bash
+jupyter notebook stock_forecasting_rnn.ipynb
 ```
 
 ---
 
-## 🔮 Deploying to Live 2026 Market Feeds
+## 🔮 Live Market Inference
 
-To transition from historical backtesting to live forward prediction:
+Easily adapt the trained model to forward-predict tomorrow's closing price for any live equity ticker using `yfinance`:
 
 ```python
 import yfinance as yf
 from src.rnn_stock_model import scale_features
 
-# 1. Fetch the most recent 60 trading days for any ticker
-ticker_data = yf.download('AAPL', period='3mo', interval='1d')
-recent_60_days = ticker_data[['Open', 'High', 'Low', 'Close', 'Volume']].tail(60).values
+# 1. Fetch recent trading history for your target ticker
+ticker = "AAPL"
+data = yf.download(ticker, period="3mo", interval="1d")
 
-# 2. Scale features using the trained feature_scaler
+# 2. Extract the most recent 60 trading days of OHLCV
+recent_60_days = data[["Open", "High", "Low", "Close", "Volume"]].tail(60).values
+
+# 3. Normalize features using the fitted training scaler
 scaled_input = feature_scaler.transform(recent_60_days).reshape(1, 60, 5)
 
-# 3. Predict next-day closing price
+# 4. Generate next-day prediction
 scaled_pred = model.forward(scaled_input)
-tomorrow_predicted_price = target_scaler.inverse_transform(scaled_pred)[0, 0]
+predicted_price = target_scaler.inverse_transform(scaled_pred)[0, 0]
 
-print(f"Predicted Closing Price for Next Trading Day: ${tomorrow_predicted_price:.2f}")
+print(f"[{ticker}] Predicted Next-Day Closing Price: ${predicted_price:.2f}")
 ```
 
 ---
 
+## 🛠️ Tech Stack
+
+- **Deep Learning**: [PyTorch](https://pytorch.org/) (with pure NumPy vectorized engine fallback)
+- **Data Engineering**: [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/)
+- **Machine Learning**: [Scikit-Learn](https://scikit-learn.org/) (`MinMaxScaler`, evaluation metrics)
+- **Visualization**: [Matplotlib](https://matplotlib.org/), [Chart.js](https://www.chartjs.org/)
+- **Application**: Python `http.server`, HTML5/CSS3
+
+---
+
+## 👤 Author
+
+**Aditthan J K**
+- GitHub: [@Aditthan-07](https://github.com/Aditthan-07)
+
+---
+
 ## 📄 License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
