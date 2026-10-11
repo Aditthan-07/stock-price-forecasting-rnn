@@ -124,6 +124,8 @@ if TORCH_AVAILABLE:
             
             if self.cell_type == 'LSTM':
                 self.rnn = nn.LSTM(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout_param)
+            elif self.cell_type == 'GRU':
+                self.rnn = nn.GRU(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout_param)
             else:
                 self.rnn = nn.RNN(input_size=input_dim, hidden_size=hidden_dim, num_layers=num_layers, batch_first=True, dropout=dropout_param)
                 
@@ -197,7 +199,8 @@ class NumPyRNNPredictor:
 
 def build_model(input_dim: int, hidden_dim: int = 64, num_layers: int = 2, dropout: float = 0.2, cell_type: str = 'LSTM'):
     """
-    Factory function instantiating the RNN / LSTM predictor model.
+    Factory function instantiating the RNN / LSTM / GRU predictor model.
+    Supported cell_type values: 'LSTM', 'GRU', 'RNN'.
     """
     if TORCH_AVAILABLE:
         return PyTorchRNNPredictor(
