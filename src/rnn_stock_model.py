@@ -545,30 +545,49 @@ def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu', retur
     return actual_prices, predicted_prices, rmse, mae
 
 
-def plot_results(train_losses, val_losses, actual_prices, predicted_prices, dates=None, save_path=None):
+def plot_results(train_losses, val_losses, actual_prices, predicted_prices, dates=None, save_path=None, backtest_results=None):
     """
-    Plot training vs validation loss convergence and actual vs predicted stock closing prices.
+    Plot training vs validation loss convergence, actual vs predicted stock closing prices,
+    and simulated algorithmic trading equity curve vs Buy & Hold benchmark.
     """
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    include_backtest = backtest_results is not None and 'strategy_equity_curve' in backtest_results
+    n_plots = 3 if include_backtest else 2
+    fig_width = 22 if include_backtest else 16
+    
+    fig, axes = plt.subplots(1, n_plots, figsize=(fig_width, 6))
     
     # Plot 1: Loss curves
     axes[0].plot(train_losses, label='Train Loss (MSE)', color='#1f77b4', linewidth=2)
     axes[0].plot(val_losses, label='Validation Loss (MSE)', color='#ff7f0e', linewidth=2, linestyle='--')
-    axes[0].set_title('Training & Validation Loss Convergence', fontsize=14, fontweight='bold')
-    axes[0].set_xlabel('Epochs', fontsize=12)
-    axes[0].set_ylabel('Mean Squared Error Loss', fontsize=12)
-    axes[0].legend(fontsize=11)
+    axes[0].set_title('Training & Validation Loss Convergence', fontsize=13, fontweight='bold')
+    axes[0].set_xlabel('Epochs', fontsize=11)
+    axes[0].set_ylabel('Mean Squared Error Loss', fontsize=11)
+    axes[0].legend(fontsize=10)
     axes[0].grid(True, alpha=0.3)
     
     # Plot 2: Actual vs Predicted Stock Closing Prices
     x_axis = pd.to_datetime(dates) if dates is not None else np.arange(len(actual_prices))
     axes[1].plot(x_axis, actual_prices, label='Actual Closing Price', color='#2ca02c', linewidth=2)
     axes[1].plot(x_axis, predicted_prices, label='Predicted Closing Price', color='#d62728', linestyle='--', linewidth=2)
-    axes[1].set_title('Next-Day Stock Closing Price: Actual vs. Predicted', fontsize=14, fontweight='bold')
-    axes[1].set_xlabel('Date' if dates is not None else 'Sample Index', fontsize=12)
-    axes[1].set_ylabel('Stock Price ($)', fontsize=12)
-    axes[1].legend(fontsize=11)
+    axes[1].set_title('Stock Closing Price: Actual vs. Predicted', fontsize=13, fontweight='bold')
+    axes[1].set_xlabel('Date' if dates is not None else 'Sample Index', fontsize=11)
+    axes[1].set_ylabel('Stock Price ($)', fontsize=11)
+    axes[1].legend(fontsize=10)
     axes[1].grid(True, alpha=0.3)
+    
+    # Plot 3: Strategy Backtest vs Buy & Hold (if available)
+    if include_backtest:
+        strat_curve = backtest_results['strategy_equity_curve']
+        bh_curve = backtest_results['benchmark_equity_curve']
+        curve_x = x_axis[:len(strat_curve)] if len(x_axis) >= len(strat_curve) else np.arange(len(strat_curve))
+        
+        axes[2].plot(curve_x, strat_curve, label=f"Model Strategy ({backtest_results.get('strategy_return_pct', 0):+.1f}%)", color='#0ea5e9', linewidth=2.5)
+        axes[2].plot(curve_x, bh_curve, label=f"Buy & Hold ({backtest_results.get('buy_and_hold_return_pct', 0):+.1f}%)", color='#64748b', linestyle='--', linewidth=1.8)
+        axes[2].set_title('Simulated Trading Equity Curve', fontsize=13, fontweight='bold')
+        axes[2].set_xlabel('Date' if dates is not None else 'Sample Index', fontsize=11)
+        axes[2].set_ylabel('Portfolio Equity ($)', fontsize=11)
+        axes[2].legend(fontsize=10)
+        axes[2].grid(True, alpha=0.3)
     
     plt.tight_layout()
     if save_path:
