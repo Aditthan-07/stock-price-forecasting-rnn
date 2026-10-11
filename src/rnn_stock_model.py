@@ -400,6 +400,33 @@ def calculate_directional_accuracy(actual_prices: np.ndarray, predicted_prices: 
     }
 
 
+def evaluate_baseline_persistence(actual_prices: np.ndarray) -> dict:
+    """
+    Evaluate the Naive Persistence Baseline model (y_hat[t+1] = y[t]).
+    This benchmark predicts that tomorrow's stock price will be identical to today's price,
+    serving as the fundamental threshold any deep learning model must outperform.
+    """
+    actual = np.asarray(actual_prices, dtype=np.float64).flatten()
+    if len(actual) < 2:
+        return {
+            'baseline_rmse': 0.0,
+            'baseline_mae': 0.0,
+            'baseline_predictions': actual
+        }
+        
+    baseline_preds = actual[:-1]
+    targets = actual[1:]
+    
+    baseline_rmse = float(root_mean_squared_error(targets, baseline_preds))
+    baseline_mae = float(mean_absolute_error(targets, baseline_preds))
+    
+    return {
+        'baseline_rmse': round(baseline_rmse, 4),
+        'baseline_mae': round(baseline_mae, 4),
+        'baseline_predictions': baseline_preds
+    }
+
+
 def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu'):
     """
     Evaluate trained model on test data, inverse-scaling predictions and actuals to compute RMSE and MAE.
