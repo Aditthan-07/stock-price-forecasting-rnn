@@ -19,8 +19,14 @@ from src.rnn_stock_model import (
     create_sliding_windows,
     build_model,
     train_model,
-    evaluate_model
+    evaluate_model,
+    generate_trading_signal,
+    TORCH_AVAILABLE
 )
+
+if TORCH_AVAILABLE:
+    import torch
+    from torch.utils.data import TensorDataset, DataLoader
 
 PORT = 8000
 
@@ -318,29 +324,44 @@ class TrainingManager:
         X_test, y_test = create_sliding_windows(test_features_scaled, test_target_scaled, window_size=window_size)
         
         val_size = int(len(X_train) * 0.2)
-        train_loader = (X_train[:-val_size], y_train[:-val_size])
-        val_loader = (X_train[-val_size:], y_train[-val_size:])
-        test_loader = (X_test, y_test)
+        if TORCH_AVAILABLE:
+            X_tr, y_tr = X_train[:-val_size], y_train[:-val_size]
+            X_val, y_val = X_train[-val_size:], y_train[-val_size:]
+            train_loader = DataLoader(TensorDataset(X_tr, y_tr), batch_size=32, shuffle=False)
+            val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=32, shuffle=False)
+            test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=32, shuffle=False)
+        else:
+            train_loader = (X_train[:-val_size], y_train[:-val_size])
+            val_loader = (X_train[-val_size:], y_train[-val_size:])
+            test_loader = (X_test, y_test)
         
         model = build_model(input_dim=len(feature_cols), hidden_dim=64, num_layers=2, dropout=0.2, cell_type=cell_type)
         train_losses, val_losses = train_model(model, train_loader, val_loader, epochs=epochs, lr=0.001, patience=6)
         
-        actual_prices, predicted_prices, rmse, mae = evaluate_model(model, test_loader, target_scaler)
+        actual_prices, predicted_prices, rmse, mae, metrics = evaluate_model(
+            model, test_loader, target_scaler, return_details=True
+        )
         test_dates = test_df['Date'].iloc[window_size:].dt.strftime('%Y-%m-%d').tolist()
         
         sample_records = df.head(15).copy()
         sample_records['Date'] = sample_records['Date'].dt.strftime('%Y-%m-%d')
         
+        signal = generate_trading_signal(actual_prices[-1], predicted_prices[-1])
+        
         payload = {
             'model_type': cell_type,
-            'rmse': rmse,
-            'mae': mae,
+            'rmse': round(rmse, 4),
+            'mae': round(mae, 4),
             'dates': test_dates,
             'actual_prices': [round(p, 2) for p in actual_prices.tolist()],
             'predicted_prices': [round(p, 2) for p in predicted_prices.tolist()],
             'train_losses': [round(l, 6) for l in train_losses],
             'val_losses': [round(l, 6) for l in val_losses],
-            'sample_table': sample_records.to_dict(orient='records')
+            'sample_table': sample_records.to_dict(orient='records'),
+            'directional': metrics.get('directional', {}),
+            'baseline': metrics.get('baseline', {}),
+            'backtest': metrics.get('backtest', {}),
+            'signal': signal
         }
         with self.lock:
             self.cached_payload = payload
@@ -420,6 +441,28 @@ class StockForecastHandler(http.server.SimpleHTTPRequestHandler):
             
         else:
             super().do_GET()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == '/api/train':
+            content_len = int(self.headers.get('Content-Length', 0))
+            post_body = self.rfile.read(content_len).decode('utf-8') if content_len > 0 else "{}"
+            try:
+                data = json.loads(post_body)
+            except Exception:
+                data = {}
+            cell_type = str(data.get('cell_type', 'LSTM')).upper()
+            epochs = int(data.get('epochs', 35))
+            if cell_type not in ['LSTM', 'GRU', 'RNN']:
+                cell_type = 'LSTM'
+            success, msg = training_manager.start_background_training(cell_type=cell_type, epochs=epochs)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'success': success, 'message': msg}).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
 
 
 def run_server(port=PORT):
