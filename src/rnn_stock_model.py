@@ -427,6 +427,72 @@ def evaluate_baseline_persistence(actual_prices: np.ndarray) -> dict:
     }
 
 
+def backtest_trading_strategy(actual_prices: np.ndarray, predicted_prices: np.ndarray, initial_capital: float = 10000.0, transaction_cost: float = 0.0005) -> dict:
+    """
+    Simulate an algorithmic trading strategy based on model predictions vs benchmark Buy & Hold.
+    Strategy Rule:
+        - If predicted[t] > actual[t-1]: Go Long (Position = 1)
+        - Else: Stay in Cash (Position = 0)
+        
+    Calculates cumulative equity, Sharpe ratio, maximum drawdown, and win rate.
+    """
+    actual = np.asarray(actual_prices, dtype=np.float64).flatten()
+    pred = np.asarray(predicted_prices, dtype=np.float64).flatten()
+    
+    if len(actual) < 2:
+        return {
+            'strategy_return_pct': 0.0,
+            'buy_and_hold_return_pct': 0.0,
+            'sharpe_ratio': 0.0,
+            'max_drawdown_pct': 0.0,
+            'win_rate_pct': 0.0,
+            'total_trades': 0,
+            'strategy_equity_curve': [initial_capital],
+            'benchmark_equity_curve': [initial_capital]
+        }
+        
+    actual_returns = (actual[1:] - actual[:-1]) / actual[:-1]
+    signals = (pred[1:] > actual[:-1]).astype(np.float64)
+    
+    position_changes = np.abs(np.diff(np.concatenate(([0.0], signals))))
+    costs = position_changes * transaction_cost
+    
+    strategy_daily_returns = (signals * actual_returns) - costs
+    
+    strategy_equity = initial_capital * np.cumprod(1.0 + strategy_daily_returns)
+    strategy_equity_curve = np.concatenate(([initial_capital], strategy_equity))
+    
+    benchmark_equity = initial_capital * np.cumprod(1.0 + actual_returns)
+    benchmark_equity_curve = np.concatenate(([initial_capital], benchmark_equity))
+    
+    total_strat_return = float(((strategy_equity_curve[-1] - initial_capital) / initial_capital) * 100.0)
+    total_bh_return = float(((benchmark_equity_curve[-1] - initial_capital) / initial_capital) * 100.0)
+    
+    strat_std = np.std(strategy_daily_returns)
+    sharpe = float((np.mean(strategy_daily_returns) / strat_std) * np.sqrt(252)) if strat_std > 1e-8 else 0.0
+    
+    peak = np.maximum.accumulate(strategy_equity_curve)
+    drawdown = (strategy_equity_curve - peak) / peak
+    max_drawdown = float(np.min(drawdown) * 100.0)
+    
+    active_days = signals > 0
+    if np.sum(active_days) > 0:
+        win_rate = float((np.sum(strategy_daily_returns[active_days] > 0) / np.sum(active_days)) * 100.0)
+    else:
+        win_rate = 0.0
+        
+    return {
+        'strategy_return_pct': round(total_strat_return, 2),
+        'buy_and_hold_return_pct': round(total_bh_return, 2),
+        'sharpe_ratio': round(sharpe, 2),
+        'max_drawdown_pct': round(max_drawdown, 2),
+        'win_rate_pct': round(win_rate, 2),
+        'total_trades': int(np.sum(position_changes > 0)),
+        'strategy_equity_curve': [round(x, 2) for x in strategy_equity_curve.tolist()],
+        'benchmark_equity_curve': [round(x, 2) for x in benchmark_equity_curve.tolist()]
+    }
+
+
 def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu'):
     """
     Evaluate trained model on test data, inverse-scaling predictions and actuals to compute RMSE and MAE.
