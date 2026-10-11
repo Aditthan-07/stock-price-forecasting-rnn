@@ -494,7 +494,10 @@ class TrainingManager:
             'val_losses': [round(l, 6) for l in val_losses],
             'sample_table': sample_records.to_dict(orient='records'),
             'directional': metrics.get('directional', {}),
-            'baseline': metrics.get('baseline', {}),
+            'baseline': {
+                'baseline_rmse': metrics.get('baseline', {}).get('baseline_rmse', 0.0),
+                'baseline_mae': metrics.get('baseline', {}).get('baseline_mae', 0.0)
+            },
             'backtest': metrics.get('backtest', {}),
             'signal': signal
         }

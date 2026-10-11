@@ -414,7 +414,7 @@ def evaluate_baseline_persistence(actual_prices: np.ndarray) -> dict:
         return {
             'baseline_rmse': 0.0,
             'baseline_mae': 0.0,
-            'baseline_predictions': actual
+            'baseline_predictions': [round(x, 2) for x in actual.tolist()]
         }
         
     baseline_preds = actual[:-1]
@@ -426,7 +426,7 @@ def evaluate_baseline_persistence(actual_prices: np.ndarray) -> dict:
     return {
         'baseline_rmse': round(baseline_rmse, 4),
         'baseline_mae': round(baseline_mae, 4),
-        'baseline_predictions': baseline_preds
+        'baseline_predictions': [round(x, 2) for x in baseline_preds.tolist()]
     }
 
 
