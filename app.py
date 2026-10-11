@@ -8,6 +8,7 @@ import socketserver
 import json
 import urllib.parse
 import os
+import threading
 import pandas as pd
 import numpy as np
 
@@ -273,9 +274,113 @@ HTML_PAGE = """<!DOCTYPE html>
 """
 
 
+class TrainingManager:
+    """
+    Thread-safe background training and payload cache manager for the web dashboard.
+    Prevents HTTP request thread blocking during model optimization.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.is_training = False
+        self.status = "Idle"
+        self.current_model = "LSTM"
+        self.cached_payload = None
+        self.error = None
+
+    def get_status(self):
+        with self.lock:
+            return {
+                "is_training": self.is_training,
+                "status": self.status,
+                "current_model": self.current_model,
+                "error": self.error
+            }
+
+    def train_model_sync(self, cell_type: str = "LSTM", epochs: int = 35):
+        csv_path = 'data/sample_stock_data.csv'
+        df = load_and_preprocess_data(csv_path, variant_a=True)
+        train_df, test_df = split_data(df, train_ratio=0.8)
+        
+        feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        target_col = 'Close'
+        
+        (
+            train_features_scaled,
+            train_target_scaled,
+            test_features_scaled,
+            test_target_scaled,
+            feature_scaler,
+            target_scaler
+        ) = scale_features(train_df, test_df, feature_cols=feature_cols, target_col=target_col)
+        
+        window_size = 60
+        X_train, y_train = create_sliding_windows(train_features_scaled, train_target_scaled, window_size=window_size)
+        X_test, y_test = create_sliding_windows(test_features_scaled, test_target_scaled, window_size=window_size)
+        
+        val_size = int(len(X_train) * 0.2)
+        train_loader = (X_train[:-val_size], y_train[:-val_size])
+        val_loader = (X_train[-val_size:], y_train[-val_size:])
+        test_loader = (X_test, y_test)
+        
+        model = build_model(input_dim=len(feature_cols), hidden_dim=64, num_layers=2, dropout=0.2, cell_type=cell_type)
+        train_losses, val_losses = train_model(model, train_loader, val_loader, epochs=epochs, lr=0.001, patience=6)
+        
+        actual_prices, predicted_prices, rmse, mae = evaluate_model(model, test_loader, target_scaler)
+        test_dates = test_df['Date'].iloc[window_size:].dt.strftime('%Y-%m-%d').tolist()
+        
+        sample_records = df.head(15).copy()
+        sample_records['Date'] = sample_records['Date'].dt.strftime('%Y-%m-%d')
+        
+        payload = {
+            'model_type': cell_type,
+            'rmse': rmse,
+            'mae': mae,
+            'dates': test_dates,
+            'actual_prices': [round(p, 2) for p in actual_prices.tolist()],
+            'predicted_prices': [round(p, 2) for p in predicted_prices.tolist()],
+            'train_losses': [round(l, 6) for l in train_losses],
+            'val_losses': [round(l, 6) for l in val_losses],
+            'sample_table': sample_records.to_dict(orient='records')
+        }
+        with self.lock:
+            self.cached_payload = payload
+            self.current_model = cell_type
+        return payload
+
+    def start_background_training(self, cell_type: str = "LSTM", epochs: int = 35):
+        with self.lock:
+            if self.is_training:
+                return False, "Training is already in progress"
+            self.is_training = True
+            self.status = f"Training {cell_type} model in background..."
+            self.current_model = cell_type
+            self.error = None
+
+        def _worker():
+            try:
+                self.train_model_sync(cell_type=cell_type, epochs=epochs)
+                with self.lock:
+                    self.status = f"{cell_type} training completed successfully"
+            except Exception as e:
+                with self.lock:
+                    self.error = str(e)
+                    self.status = f"Training error: {e}"
+            finally:
+                with self.lock:
+                    self.is_training = False
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        return True, f"Training {cell_type} started"
+
+
+training_manager = TrainingManager()
+
+
 class StockForecastHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
         
         if parsed.path == '/' or parsed.path == '/index.html':
             self.send_response(200)
@@ -283,52 +388,31 @@ class StockForecastHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode('utf-8'))
             
+        elif parsed.path == '/api/status':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(training_manager.get_status()).encode('utf-8'))
+
+        elif parsed.path == '/api/train':
+            cell_type = params.get('cell_type', ['LSTM'])[0].upper()
+            if cell_type not in ['LSTM', 'GRU', 'RNN']:
+                cell_type = 'LSTM'
+            success, msg = training_manager.start_background_training(cell_type=cell_type, epochs=35)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'success': success, 'message': msg}).encode('utf-8'))
+
         elif parsed.path == '/api/forecast':
-            csv_path = 'data/sample_stock_data.csv'
-            df = load_and_preprocess_data(csv_path, variant_a=True)
-            train_df, test_df = split_data(df, train_ratio=0.8)
-            
-            feature_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-            target_col = 'Close'
-            
-            (
-                train_features_scaled,
-                train_target_scaled,
-                test_features_scaled,
-                test_target_scaled,
-                feature_scaler,
-                target_scaler
-            ) = scale_features(train_df, test_df, feature_cols=feature_cols, target_col=target_col)
-            
-            window_size = 60
-            X_train, y_train = create_sliding_windows(train_features_scaled, train_target_scaled, window_size=window_size)
-            X_test, y_test = create_sliding_windows(test_features_scaled, test_target_scaled, window_size=window_size)
-            
-            val_size = int(len(X_train) * 0.2)
-            train_loader = (X_train[:-val_size], y_train[:-val_size])
-            val_loader = (X_train[-val_size:], y_train[-val_size:])
-            test_loader = (X_test, y_test)
-            
-            model = build_model(input_dim=len(feature_cols), hidden_dim=64, num_layers=2, dropout=0.2, cell_type='LSTM')
-            train_losses, val_losses = train_model(model, train_loader, val_loader, epochs=35, lr=0.001, patience=6)
-            
-            actual_prices, predicted_prices, rmse, mae = evaluate_model(model, test_loader, target_scaler)
-            test_dates = test_df['Date'].iloc[window_size:].dt.strftime('%Y-%m-%d').tolist()
-            
-            sample_records = df.head(15).copy()
-            sample_records['Date'] = sample_records['Date'].dt.strftime('%Y-%m-%d')
-            
-            payload = {
-                'rmse': rmse,
-                'mae': mae,
-                'dates': test_dates,
-                'actual_prices': [round(p, 2) for p in actual_prices.tolist()],
-                'predicted_prices': [round(p, 2) for p in predicted_prices.tolist()],
-                'train_losses': [round(l, 6) for l in train_losses],
-                'val_losses': [round(l, 6) for l in val_losses],
-                'sample_table': sample_records.to_dict(orient='records')
-            }
-            
+            cell_type = params.get('cell_type', ['LSTM'])[0].upper()
+            if cell_type not in ['LSTM', 'GRU', 'RNN']:
+                cell_type = 'LSTM'
+                
+            payload = training_manager.cached_payload
+            if payload is None or payload.get('model_type') != cell_type:
+                payload = training_manager.train_model_sync(cell_type=cell_type)
+                
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
