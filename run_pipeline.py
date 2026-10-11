@@ -109,29 +109,31 @@ def main():
     
     # 8. Model Evaluation
     print("\n7. Evaluating model on unseen test dataset...")
-    actual_prices, predicted_prices, rmse, mae = evaluate_model(
+    actual_prices, predicted_prices, rmse, mae, metrics = evaluate_model(
         model=model,
         test_loader=test_loader,
         target_scaler=target_scaler,
-        device='cpu'
+        device='cpu',
+        return_details=True
     )
     
     # Test dates for plotting
     test_dates = test_df['Date'].iloc[window_size:].reset_index(drop=True)
     
     # 9. Plot Results
-    print("\n8. Rendering and saving actual vs predicted plot...")
+    print("\n8. Rendering and saving actual vs predicted and strategy equity curve plots...")
     plot_results(
         train_losses=train_losses,
         val_losses=val_losses,
         actual_prices=actual_prices,
         predicted_prices=predicted_prices,
         dates=test_dates,
-        save_path='stock_forecasting_results.png'
+        save_path='stock_forecasting_results.png',
+        backtest_results=metrics.get('backtest')
     )
     
     print("\nPipeline execution completed successfully!")
-    return actual_prices, predicted_prices, rmse, mae
+    return actual_prices, predicted_prices, rmse, mae, metrics
 
 
 if __name__ == '__main__':
