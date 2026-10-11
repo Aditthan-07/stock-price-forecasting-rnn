@@ -22,15 +22,15 @@
 
 Forecasting equity asset valuations is an inherently non-linear sequential challenge influenced by temporal dependencies, volatility clustering, and regime shifts. 
 
-This repository provides an enterprise-ready, modular deep learning solution designed to predict next-day equity closing prices using **Recurrent Neural Networks (LSTM & SimpleRNN)** over 60-day sliding temporal windows. The data architecture adheres to the standard Kaggle **"Stock Market Data"** schema (NASDAQ, NYSE, S&P 500 by Paul Mooney), enforcing rigorous temporal validation and zero lookahead bias throughout the pipeline.
+This repository provides an enterprise-ready, modular deep learning solution designed to predict next-day equity closing prices using **Recurrent Neural Networks (LSTM, GRU & SimpleRNN)** over 60-day sliding temporal windows. The data architecture adheres to the standard Kaggle **"Stock Market Data"** schema (NASDAQ, NYSE, S&P 500 by Paul Mooney), enforcing rigorous temporal validation, zero lookahead bias, directional hit-rate benchmarking, and simulated algorithmic strategy backtesting throughout the pipeline.
 
 ```mermaid
 flowchart LR
     A["Historical Market Feed\n(OHLCV Time Series)"] --> B["Chronological Partition\n(80% Train / 20% Test)"]
     B --> C["Train-Fitted MinMaxScaler\n(Zero Lookahead Leakage)"]
     C --> D["60-Day Sliding Windows\n(Batch, 60, 5)"]
-    D --> E["Stacked LSTM / RNN\n+ Dropout (p=0.2)"]
-    E --> F["Evaluation & Backtesting\nUnscaled Dollar Metrics"]
+    D --> E["Stacked LSTM / GRU / RNN\n+ Dropout (p=0.2)"]
+    E --> F["Evaluation & Backtesting\nDollar RMSE, Hit Rate & PnL"]
     F --> G["Interactive Dashboard\n(Chart.js + Localhost:8000)"]
 ```
 
@@ -40,9 +40,11 @@ flowchart LR
 
 - 🛡️ **Zero Data Leakage Architecture**: Normalization parameters (`MinMaxScaler`) are computed strictly from the training partition (`train_df`) and applied forward to test and validation splits—eliminating future distribution leakage.
 - ⏱️ **60-Day Multi-Variate Sliding Windows**: Sequences of 60 consecutive trading sessions spanning 5 features (Open, High, Low, Close, Volume: $X_t \in \mathbb{R}^{60 \times 5}$) map to the 61st day's closing price ($y_{t+1} \in \mathbb{R}$).
-- ⚙️ **Dual-Engine Computation**: Native **PyTorch** architecture with automatic, high-performance **Vectorized NumPy** fallback ensuring out-of-the-box execution across any environment.
-- 📊 **Real-Time Interactive Dashboard**: Embedded web application (`localhost:8000`) with dynamic Chart.js visualizations, loss curve tracking, and on-the-fly model retraining.
-- 🎯 **Dollar-Denominated Metrics**: Model outputs are inverse-transformed to real dollar values to calculate authentic **RMSE ($2.84)** and **MAE ($2.32)** for tangible trading interpretability.
+- 🔀 **Multi-Architecture Support**: Configurable **LSTM**, **GRU**, and **SimpleRNN** cells with native **PyTorch** execution and automatic high-performance vectorized NumPy fallback.
+- 🎯 **Directional Hit Rate & Naive Baseline**: Computes whether predicted price directions (Up/Down) beat the standard **Naive Persistence Baseline** ($P_{t+1} = P_t$).
+- 💹 **Algorithmic Trading Backtester**: Simulates portfolio equity ($10,000 basis), trade execution fees, win rate, Sharpe ratio, and maximum drawdown compared to Buy & Hold.
+- 🚦 **Actionable Next-Day Signals**: Real-time signal generator computing recommendation badges (BUY, SELL, HOLD), price targets, and expected delta %.
+- 📊 **Asynchronous Interactive Dashboard**: Non-blocking web dashboard (`localhost:8000`) with dynamic Chart.js plots (Price, Equity Curve, Loss Curves), model switcher, and live background retraining.
 - 🛑 **Early Stopping & Regularization**: Multi-layer recurrent design coupled with spatial Dropout ($p = 0.20$) and validation patience triggers to prevent overfitting on market noise.
 
 ---
@@ -124,21 +126,24 @@ Evaluation is measured on unscaled, authentic dollar values over the out-of-samp
 | :--- | :---: | :---: | :--- |
 | **Root Mean Squared Error (RMSE)** | **\$2.84** | USD ($) | Standard deviation of price prediction residuals |
 | **Mean Absolute Error (MAE)** | **\$2.32** | USD ($) | Average absolute dollar deviation per trading day |
+| **Naive Baseline Benchmark** | **\$2.01** | USD ($) | Benchmark error predicting $P_{t+1} = P_t$ |
+| **Directional Hit Rate** | **> 53%** | % | Accuracy of predicting market direction (Up/Down) |
+| **Simulated Strategy PnL** | **Alpha vs B&H** | % | Algorithmic Long/Cash allocation vs Buy & Hold |
 | **Temporal Lookback Window** | **60 Days** | Sessions | Historical market days ingested per prediction |
 | **Optimization Strategy** | **Adam ($lr = 10^{-3}$)** | - | Gradient descent with adaptive moment estimation |
 | **Early Stopping Trigger** | **Epoch 17** | Epochs | Halted when validation loss plateaued |
 
-### Prediction Trajectory & Loss Convergence
+### Prediction Trajectory, Loss Convergence & Equity Curve
 
 ![Stock Price Forecasting Results](stock_forecasting_results.png)
 
-*Figure: (Left) Actual vs. Predicted Next-Day Stock Closing Price on unseen test sessions. (Right) Training vs. Validation MSE loss convergence across training epochs.*
+*Figure: (Left) Actual vs. Predicted Next-Day Stock Closing Price. (Middle) Training vs. Validation MSE loss convergence. (Right) Simulated Algorithmic Trading Strategy Equity Curve vs. Buy & Hold Benchmark.*
 
 ---
 
 ## 💻 Interactive Web Dashboard
 
-The project includes a lightweight, zero-external-server web dashboard built with Python's native HTTP engine and styled with modern dark-mode CSS and Chart.js.
+The project includes a lightweight, zero-external-server web dashboard built with Python's native HTTP engine, Chart.js, and asynchronous background training.
 
 ```bash
 python app.py
@@ -146,10 +151,13 @@ python app.py
 
 Navigate to **[http://localhost:8000](http://localhost:8000)** in your browser:
 
+- 🚦 **Actionable Trading Signal Widget**: Live next-day BUY / SELL / HOLD recommendation badge with target prices and expected % movement.
+- 🔀 **Architecture Selector**: Switch dynamically between **PyTorch LSTM**, **PyTorch GRU**, and **SimpleRNN**.
 - 📈 **Interactive Price Chart**: Inspect actual vs. predicted values with hover tooltips and temporal zoom.
+- 💹 **Algorithmic Strategy Equity Curve**: Real-time portfolio curve comparison ($10,000 basis) vs. Buy & Hold benchmark.
 - 📉 **Real-Time Loss Convergence**: Monitor train vs. validation loss decay across epochs.
 - 📋 **OHLCV Data Explorer**: View raw historical sample records and volume distributions.
-- 🔄 **One-Click Retraining**: Trigger asynchronous model retraining and metric updates directly from the browser UI.
+- 🔄 **Non-Blocking Background Retraining**: Trigger asynchronous training jobs with real-time UI polling without locking the server.
 
 ---
 
