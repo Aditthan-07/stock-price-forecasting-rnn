@@ -493,9 +493,10 @@ def backtest_trading_strategy(actual_prices: np.ndarray, predicted_prices: np.nd
     }
 
 
-def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu'):
+def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu', return_details: bool = False):
     """
-    Evaluate trained model on test data, inverse-scaling predictions and actuals to compute RMSE and MAE.
+    Evaluate trained model on test data, inverse-scaling predictions and actuals to compute RMSE, MAE,
+    directional hit rate, persistence baseline comparison, and simulated trading returns.
     """
     if TORCH_AVAILABLE and isinstance(model, nn.Module):
         model.to(device)
@@ -520,10 +521,27 @@ def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu'):
     rmse = float(root_mean_squared_error(actual_prices, predicted_prices))
     mae = float(mean_absolute_error(actual_prices, predicted_prices))
     
-    print(f"\n--- Model Evaluation Metrics (Actual Dollar Scale) ---")
-    print(f"Root Mean Squared Error (RMSE): ${rmse:.4f}")
-    print(f"Mean Absolute Error (MAE):     ${mae:.4f}")
+    dir_metrics = calculate_directional_accuracy(actual_prices, predicted_prices)
+    baseline_metrics = evaluate_baseline_persistence(actual_prices)
+    backtest_metrics = backtest_trading_strategy(actual_prices, predicted_prices)
     
+    print(f"\n--- Model Evaluation Metrics (Actual Dollar Scale) ---")
+    print(f"Root Mean Squared Error (RMSE): ${rmse:.4f} (Baseline Naive: ${baseline_metrics['baseline_rmse']:.4f})")
+    print(f"Mean Absolute Error (MAE):     ${mae:.4f} (Baseline Naive: ${baseline_metrics['baseline_mae']:.4f})")
+    print(f"Directional Accuracy:          {dir_metrics['directional_accuracy']:.2f}% ({dir_metrics['correct_count']}/{dir_metrics['total_evaluations']} correct moves)")
+    print(f"Strategy Cumulative Return:    {backtest_metrics['strategy_return_pct']:+.2f}% (Buy & Hold: {backtest_metrics['buy_and_hold_return_pct']:+.2f}%)")
+    print(f"Strategy Sharpe Ratio:         {backtest_metrics['sharpe_ratio']:.2f} | Max Drawdown: {backtest_metrics['max_drawdown_pct']:.2f}%")
+    
+    metrics = {
+        'rmse': round(rmse, 4),
+        'mae': round(mae, 4),
+        'directional': dir_metrics,
+        'baseline': baseline_metrics,
+        'backtest': backtest_metrics
+    }
+    
+    if return_details:
+        return actual_prices, predicted_prices, rmse, mae, metrics
     return actual_prices, predicted_prices, rmse, mae
 
 
