@@ -597,3 +597,47 @@ def plot_results(train_losses, val_losses, actual_prices, predicted_prices, date
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"Plot saved to '{save_path}'")
     plt.close()
+
+
+def generate_trading_signal(last_price: float, predicted_price: float, threshold_pct: float = 0.25) -> dict:
+    """
+    Generate an actionable next-day quantitative trading signal based on the model's forecast.
+    
+    Args:
+        last_price: Most recent realized closing price.
+        predicted_price: Model's forecast for the next trading day.
+        threshold_pct: Minimum expected percentage move required to trigger a directional action.
+        
+    Returns:
+        Structured trading signal dictionary with action, sentiment, price targets, and delta.
+    """
+    delta_dollar = float(predicted_price - last_price)
+    delta_pct = float((delta_dollar / last_price) * 100.0) if last_price > 0 else 0.0
+    
+    if delta_pct >= threshold_pct:
+        action = "BUY"
+        sentiment = "BULLISH"
+        badge_color = "#4ade80"  # Green
+        summary = f"Model projects an upward move of {delta_pct:+.2f}% (${delta_dollar:+.2f}). Recommended action is LONG / BUY."
+    elif delta_pct <= -threshold_pct:
+        action = "SELL"
+        sentiment = "BEARISH"
+        badge_color = "#f87171"  # Red
+        summary = f"Model projects a downward move of {delta_pct:+.2f}% (${delta_dollar:+.2f}). Recommended action is SHORT / CASH."
+    else:
+        action = "HOLD"
+        sentiment = "NEUTRAL"
+        badge_color = "#fbbf24"  # Amber
+        summary = f"Expected price movement ({delta_pct:+.2f}%) is within neutral volatility bounds (±{threshold_pct}%). Recommended action is HOLD."
+        
+    return {
+        'action': action,
+        'sentiment': sentiment,
+        'badge_color': badge_color,
+        'last_price': round(float(last_price), 2),
+        'target_price': round(float(predicted_price), 2),
+        'delta_dollar': round(delta_dollar, 2),
+        'delta_pct': round(delta_pct, 2),
+        'summary': summary
+    }
+
