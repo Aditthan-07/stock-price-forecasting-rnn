@@ -361,6 +361,45 @@ def train_model(model, train_loader, val_loader, epochs: int = 40, lr: float = 0
         return train_losses, val_losses
 
 
+def calculate_directional_accuracy(actual_prices: np.ndarray, predicted_prices: np.ndarray) -> dict:
+    """
+    Calculate Directional Accuracy (Hit Rate) indicating whether the model correctly
+    predicted the direction of price movement relative to the prior period.
+    
+    Formula:
+        actual_change = actual[t] - actual[t-1]
+        pred_change   = predicted[t] - actual[t-1]
+        correct       = (actual_change * pred_change > 0) or (actual_change == 0 and pred_change == 0)
+    """
+    actual = np.asarray(actual_prices, dtype=np.float64).flatten()
+    pred = np.asarray(predicted_prices, dtype=np.float64).flatten()
+    
+    if len(actual) < 2:
+        return {
+            'directional_accuracy': 0.0,
+            'correct_count': 0,
+            'total_evaluations': 0,
+            'up_days': 0,
+            'down_days': 0
+        }
+        
+    actual_deltas = actual[1:] - actual[:-1]
+    predicted_deltas = pred[1:] - actual[:-1]
+    
+    correct_moves = ((actual_deltas * predicted_deltas > 0) | ((actual_deltas == 0) & (predicted_deltas == 0)))
+    total_moves = len(actual_deltas)
+    correct_count = int(np.sum(correct_moves))
+    accuracy_pct = float((correct_count / total_moves) * 100.0) if total_moves > 0 else 0.0
+    
+    return {
+        'directional_accuracy': round(accuracy_pct, 2),
+        'correct_count': correct_count,
+        'total_evaluations': total_moves,
+        'up_days': int(np.sum(actual_deltas > 0)),
+        'down_days': int(np.sum(actual_deltas < 0))
+    }
+
+
 def evaluate_model(model, test_loader, target_scaler, device: str = 'cpu'):
     """
     Evaluate trained model on test data, inverse-scaling predictions and actuals to compute RMSE and MAE.
